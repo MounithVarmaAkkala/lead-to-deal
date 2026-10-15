@@ -1,0 +1,408 @@
+================================================================================
+PRODUCT REQUIREMENTS DOCUMENT (PRD)
+Autonomous Lead-to-Deal Intelligence System
+================================================================================
+
+Document Status: Ready for Engineering (v1.1)
+Owner: Principal Product Manager / Systems Architect
+Target Release: v1.0 (MVP)
+Last Updated: 13 October 2026
+Stakeholders: Engineering, Design, QA, Sales Ops, Customer Success, Sales Leadership
+
+================================================================================
+1. EXECUTIVE SUMMARY & METADATA
+================================================================================
+
+Elevator Pitch
+--------------
+An autonomous, real-time lead-to-deal intelligence system that ingests lead and
+engagement events, continuously updates lead scores and pipeline stages,
+auto-assigns and prioritizes leads via round-robin + score/recency, and provides
+fine-grained human-readable explanations for every score change and recommended
+action. Built for transparency, speed (< 500 ms), and multi-tenant SaaS readiness.
+
+Success Metrics (MVP)
+---------------------
+Metric                                      | Target                          | Measurement Method
+--------------------------------------------|---------------------------------|----------------------------------
+p95 end-to-end latency (event → WS push)    | < 500 ms                        | Backend + client instrumentation
+Pilot adoption                              | ≥ 2 paying or internal pilot    | Tenant activation tracking
+                                            | tenants live within 30 days of  |
+                                            | GA                              |
+Rep satisfaction                            | ≥ 80% positive in post-pilot    | In-app or external survey
+                                            | survey (“I trust the scores and |
+                                            | explanations”)                  |
+Hot-queue resolution time                   | Median < 4 hours                | Assignment log analytics
+Score explanation view rate                 | ≥ 60% of leads opened by reps   | Frontend event tracking
+                                            | show explanation timeline       |
+                                            | expansion                       |
+
+Cross-functional Stakeholders
+- Engineering Lead
+- Frontend / Backend Engineers
+- Product Design
+- QA
+- Sales Operations
+- Customer Success
+- Sales Leadership
+
+================================================================================
+2. PROBLEM DEFINITION & STRATEGIC ALIGNMENT
+================================================================================
+
+User Pain Points
+----------------
+- Sales teams waste hours manually scoring and prioritizing leads.
+- Lack of transparency in existing scoring tools erodes trust
+  (“why did this lead jump 30 points?”).
+- Pipeline stages lag behind real engagement.
+- High-priority leads get stuck when reps are at capacity.
+
+Market Context & Why Now
+------------------------
+Modern revenue teams demand real-time, explainable intelligence. Existing CRMs
+either lack autonomous scoring or hide the logic. Competitors are moving toward
+AI-assisted pipelines.
+
+Why Rule-Based Scoring First (v1)
+---------------------------------
+We deliberately choose pure rule-based scoring with explicit weighted formulas
+for v1 because:
+
+- Trust & Adoption: Sales teams will not use a black-box model. Fine-grained
+  explanations (“+12 points because of 3 email opens in last 48h”) are
+  non-negotiable for early buy-in.
+- Speed to Value: Rule engine can be shipped, tuned, and audited in weeks,
+  not months.
+- Debuggability & Compliance: Every score change is fully reproducible and
+  auditable — critical for regulated or enterprise sales orgs.
+- Foundation for ML: Clean, labeled event + explanation data collected in v1
+  becomes the perfect training set for hybrid/ML models later.
+
+Out of Scope for v1.0
+---------------------
+- Machine-learning / predictive models
+- Advanced territory or skill-based assignment
+- Deal-value estimation
+- Full SSO / advanced RBAC
+- Mobile native apps
+- Custom pipeline stage configuration UI
+- Email/SMS outreach automation
+
+================================================================================
+3. USER PERSONAS & USER SCENARIOS
+================================================================================
+
+Primary Persona – Sales Representative (Alex)
+---------------------------------------------
+Goal: Focus only on the highest-priority, hottest leads.
+Motivation: Close more deals with less manual work.
+Journey: Logs in → sees prioritized “Hot Queue” + personal queue → clicks lead
+→ views live score history + explanations → takes action → stage auto-updates.
+
+Secondary Persona – Sales Manager / Admin (Jordan)
+--------------------------------------------------
+Goal: Oversee pipeline health, assignment fairness, and scoring transparency.
+Motivation: Maximize team conversion rate and reduce lead leakage.
+Journey: Dashboard overview → monitor assignment load → review score change
+explanations → adjust capacity rules → audit closed-won/lost reasons.
+
+Tertiary Persona – Sales Ops Analyst (Taylor)
+---------------------------------------------
+Goal: Continuously audit scoring fairness, assignment balance, and weight
+effectiveness; tune the system without engineering tickets.
+Motivation: Maximize ROI of the lead engine and protect data quality.
+Journey: Reviews explanation audit logs and assignment fairness reports →
+adjusts scoring weights via Admin UI → monitors impact on conversion and
+hot-queue metrics → reports insights to leadership.
+
+End-to-End Journey Map (Sales Rep)
+----------------------------------
+1. Lead created or engagement event arrives.
+2. System scores, stages, assigns, and pushes update via WebSocket.
+3. Rep sees updated priority queue in < 500 ms.
+4. Opens lead → full explanation audit trail visible.
+5. Takes action (call, email, meeting).
+6. New event triggers next score/stage update.
+
+================================================================================
+4. USER STORIES & ACCEPTANCE CRITERIA (Gherkin)
+================================================================================
+
+US-01 – Real-time Score Update
+As a Sales Rep, I want lead scores to update instantly when an engagement event
+arrives, so that I always work with the freshest priority.
+
+Given a lead exists with score 45
+When an “email open” event is ingested
+Then the score increases by the configured weight
+And a fine-grained explanation is recorded
+    (“+X points because of email open in last 48h”)
+And the updated score + explanation is pushed via WebSocket to all relevant
+    clients within 500 ms
+
+US-02 – Automatic Forward Stage Transition
+As a Sales Rep, I want pipeline stages to advance automatically when score
+thresholds or key events are met, so that the pipeline stays current.
+
+Given a lead is in stage “Contacted” and score crosses the Qualified threshold
+When the scoring engine evaluates the lead
+Then the stage moves to “Qualified”
+And an explanation is logged
+And the change is broadcast in real time
+
+US-03 – Manual Confirmation for Backward or Closed Stages
+As a Sales Rep, I want to confirm any backward movement or Closed-Won/Lost
+transition, so that critical decisions remain human-controlled.
+
+Given a lead is in “Qualified”
+When a user attempts to move it back to “Contacted” or to Closed-Won/Lost
+Then a confirmation dialog is required
+And the transition only occurs after confirmation
+
+US-04 – Round-Robin Assignment + Hot Queue
+As a Sales Manager, I want new leads assigned round-robin and high-priority
+leads placed in a hot queue when capacity is full, so that no hot lead is dropped.
+
+Given multiple available Sales Reps
+When a new lead is scored
+Then it is assigned to the next rep in round-robin order
+And if all reps are at capacity, the lead enters the “Hot Queue”
+And when any rep frees capacity, the highest-priority hot-queue lead is reassigned
+
+US-05 – Fine-grained Explanation Audit
+As a Sales Rep or Admin, I want every score change to have a clear,
+human-readable reason, so that I trust and can explain the system.
+
+Given any score-changing event
+When the scoring engine runs
+Then an immutable audit record is created containing:
+  - previous score
+  - new score
+  - delta
+  - exact feature(s) and weights applied
+  - timestamp
+  - triggering event ID
+
+US-06 – Admin Weight Tuning
+As an Admin / Sales Ops Analyst, I want to adjust scoring weights via a simple
+UI, so that I can tune the system without requiring engineering changes.
+
+Given I am authenticated as Admin
+When I open the Scoring Weights page
+Then I can view current weights and time windows for every feature
+And I can update any weight or window
+And the change takes effect on the next event evaluation
+And an audit entry is written recording who changed what and when
+
+================================================================================
+5. FUNCTIONAL REQUIREMENTS (FRONTEND & BACKEND)
+================================================================================
+
+P0 – Must Have
+--------------
+- Ingest endpoint for all core events:
+  lead created, email open/click, form submission, page visit, meeting booked,
+  call logged, deal stage change.
+- Idempotent event ingestion: Every event carries a unique event_id.
+  Duplicate event_ids within a tenant are ignored (no double-scoring).
+- Pure rule-based scoring engine with configurable weights (Admin only).
+- Fine-grained explanation generation and persistent immutable audit log.
+- Automatic forward stage transitions based on score thresholds + key events.
+- Manual confirmation required for backward and Closed-Won/Lost transitions.
+- Round-robin assignment among available reps.
+- Capacity model: Maximum concurrent open leads per Sales Rep
+  (configurable per user). When a rep reaches this limit they are marked
+  unavailable for new assignments.
+- Hot Queue when capacity is reached; automatic reassignment when capacity frees.
+- Real-time WebSocket push of score, stage, assignment, and explanation
+  updates (< 500 ms).
+- Multi-tenant data isolation.
+- JWT authentication + roles (Admin, Sales Rep).
+- React dashboard: prioritized queue, lead detail with explanation timeline,
+  pipeline view, hot queue.
+
+P1 – Should Have
+----------------
+- Webhook receivers for HubSpot, Salesforce, Segment (basic signature validation).
+- Admin UI to view/adjust scoring weights (implements US-06).
+- Capacity settings per rep.
+- Basic filtering and search on leads.
+
+P2 – Nice to Have
+-----------------
+- Export of explanation audit logs.
+- Simple notification preferences.
+
+UI/UX Behaviors
+---------------
+- Score changes animate with color flash + delta badge.
+- Explanation timeline is reverse-chronological and expandable.
+- Hot Queue is visually distinct (red/amber).
+- Empty states for new tenants and empty queues.
+- Optimistic UI with rollback on WebSocket failure.
+
+================================================================================
+6. FULL-STACK TECHNICAL ARCHITECTURE & DATA MODEL
+================================================================================
+
+High-level Architecture
+-----------------------
+[Webhook / Demo Simulator]
+          ↓
+   FastAPI Ingest Layer  ←→  Redis (event buffer + rate limiting + pub/sub)
+          ↓
+   Scoring + Assignment Engine
+          ↓
+   PostgreSQL (multi-tenant, immutable audit tables)
+          ↓
+   WebSocket Broadcaster  ←→  React Clients
+
+- Redis is in the core path for short-term event buffering under load spikes,
+  rate limiting, and optional pub/sub for horizontal WebSocket scaling.
+- Kafka is not required for v1 but the architecture leaves a clean extension point.
+
+Confirmed Tech Stack
+--------------------
+Layer              | Technology
+-------------------|----------------------------------------------------------
+Backend            | Python 3.12 + FastAPI
+Database           | PostgreSQL (primary). SQLite only for pure local dev.
+ORM / Migrations   | SQLAlchemy 2.0 + Alembic
+Real-time          | WebSockets (FastAPI native)
+Auth               | JWT + simple RBAC (Admin, Sales Rep)
+Event Ingest       | FastAPI endpoints + background workers
+Frontend           | React 18 + Vite + TypeScript + Tailwind CSS
+Caching / Queue    | Redis
+Deployment         | Docker Compose (local + cloud-ready)
+Observability      | Structured logging + basic Prometheus metrics
+
+Core Tables (PostgreSQL, multi-tenant)
+--------------------------------------
+- tenants (id, name, created_at)
+- users (id, tenant_id, email, role, max_concurrent_leads, is_available, ...)
+- leads (id, tenant_id, company_name, company_size, current_score, stage,
+         assigned_to, priority_score, ...)
+- events (id, tenant_id, lead_id, event_type, payload JSONB, received_at)
+  → unique constraint on (tenant_id, event_id) for idempotency
+- score_explanations (id, tenant_id, lead_id, event_id, previous_score,
+                      new_score, delta, reason_text, features JSONB, created_at)
+  → APPEND-ONLY / IMMUTABLE (no UPDATE or DELETE allowed; enforced by DB
+     permissions + application logic)
+- pipeline_transitions (id, lead_id, from_stage, to_stage, triggered_by,
+                        confirmed_by, created_at)
+- assignment_log (id, lead_id, from_user, to_user, reason, created_at)
+- scoring_weights (tenant_id, feature_name, weight, window_hours, ...)
+- weight_change_audit (id, tenant_id, changed_by, feature_name, old_weight,
+                       new_weight, changed_at)
+
+API Contract (selected)
+-----------------------
+- POST   /api/v1/events                          – idempotent ingest
+- GET    /api/v1/leads                           – list with filters + priority sort
+- GET    /api/v1/leads/{id}                      – detail + explanation timeline
+- POST   /api/v1/leads/{id}/transition           – manual stage change (with confirmation)
+- PUT    /api/v1/admin/scoring-weights           – Admin only
+- WS     /ws/tenant/{tenant_id}                  – real-time channel
+
+Security
+--------
+- JWT with short expiry + refresh
+- Tenant isolation enforced at query level
+- Webhook signature verification
+- Rate limiting on ingest
+- Input validation with Pydantic
+
+================================================================================
+7. NON-FUNCTIONAL REQUIREMENTS (NFRs)
+================================================================================
+
+- Latency: p95 event → WebSocket push < 500 ms.
+- Throughput: Support 100 events/sec per tenant initially; horizontally scalable.
+- Scalability: Horizontal scaling via Docker Compose (local) → Kubernetes
+  (production). Stateless FastAPI workers + Redis + PostgreSQL read replicas.
+- Availability: 99.5% for MVP.
+- Multi-tenancy: Strict data isolation; no cross-tenant leakage.
+- Privacy: GDPR/CCPA ready (data deletion endpoint, audit logs).
+- Accessibility: WCAG 2.1 AA compliance on the dashboard.
+  Success criteria:
+  - Full keyboard navigation
+  - Screen-reader tested (VoiceOver / NVDA)
+  - Color-contrast ≥ 4.5:1
+  - Visible focus indicators
+- Security: OWASP Top 10 mitigated; secrets in environment / vault.
+
+================================================================================
+8. EDGE CASES, ERROR HANDLING & FALLBACKS
+================================================================================
+
+- Duplicate events → ignored via (tenant_id, event_id) uniqueness.
+- Invalid webhook signature → 401 + log.
+- Scoring engine failure → event queued in Redis for retry; lead left in
+  previous state.
+- WebSocket disconnect → client auto-reconnects with last-known sequence.
+- All reps at capacity → lead enters Hot Queue; notification to managers.
+- Empty tenant → clear empty states + onboarding CTA.
+- Concurrent stage transitions → optimistic locking / version column.
+- Offline client → queue actions locally and sync when reconnected (best-effort).
+
+================================================================================
+9. ANALYTICS & INSTRUMENTATION PLAN
+================================================================================
+
+Events to track (Amplitude / Mixpanel style)
+--------------------------------------------
+- event_ingested
+- score_updated (with delta, features)
+- stage_transitioned (auto vs manual)
+- lead_assigned / lead_reassigned_from_hot_queue
+- explanation_viewed
+- weight_updated
+- hot_queue_entered / hot_queue_cleared
+
+Key Funnels
+-----------
+- Event → Score Update → Stage Change → Assignment → Rep Action
+- Hot Queue entry → Reassignment → Conversion
+- Weight change → subsequent score distribution / conversion impact
+  (for Sales Ops)
+
+================================================================================
+10. OPEN QUESTIONS & RISKS
+================================================================================
+
+Open Questions
+--------------
+1. Exact numeric weights and stage thresholds (to be finalized with Sales Ops).
+2. Do we need i18n for explanation text in v1?
+   (Currently English-only; impacts explanation generation.)
+3. Retention policy for audit logs and events — 90 days vs. 1 year vs. indefinite?
+   (Directly affects database sizing and cost.)
+4. Webhook payload mapping samples for HubSpot / Salesforce / Segment.
+5. Whether capacity should also support a secondary daily assignment limit
+   in addition to concurrent open leads.
+
+Risks
+-----
+- Overly aggressive auto-staging may frustrate users → mitigated by clear
+  explanations + easy undo.
+- Round-robin can feel unfair under uneven load → Hot Queue + capacity
+  visibility mitigate.
+- Real-time performance under high multi-tenant load → Redis + horizontal
+  scaling planned.
+- Audit log growth → retention policy must be decided before GA.
+
+================================================================================
+NEXT STEPS
+================================================================================
+
+1. Engineering + Sales Ops review of this v1.1 PRD.
+2. Finalize weights, thresholds, and retention policy.
+3. Design high-fidelity UI (priority queue + explanation timeline + Admin
+   weight editor).
+4. Begin backend scaffolding (FastAPI + PostgreSQL + Redis + immutable audit
+   tables + multi-tenant models).
+
+================================================================================
+END OF DOCUMENT
+================================================================================

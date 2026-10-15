@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     # CORS (comma-separated in the environment)
     CORS_ORIGINS: Annotated[List[str], NoDecode] = [
         "http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000", "http://127.0.0.1:3000",
+        # Production frontend on Vercel
+        "https://frontend-seven-beige-78.vercel.app",
+        "https://frontend-1mvakkala-gmailcoms-projects.vercel.app",
     ]
 
     @field_validator("CORS_ORIGINS", mode="before")

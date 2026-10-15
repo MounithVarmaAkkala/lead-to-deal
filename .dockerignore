@@ -1,0 +1,6 @@
+frontend/
+**/__pycache__
+**/.pytest_cache
+**/*.db
+.git
+.claude

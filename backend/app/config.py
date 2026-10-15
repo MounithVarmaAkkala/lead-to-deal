@@ -47,7 +47,11 @@ class Settings(BaseSettings):
     @field_validator("DATABASE_URL", mode="after")
     @classmethod
     def _fix_pg_scheme(cls, v: str) -> str:
-        return v.replace("postgres://", "postgresql://", 1)
+        # Pin the psycopg2 driver: SQLAlchemy 2.1 defaults plain postgresql:// to psycopg (v3).
+        for prefix in ("postgres://", "postgresql://"):
+            if v.startswith(prefix):
+                return "postgresql+psycopg2://" + v[len(prefix):]
+        return v
 
     # Optional regex for extra origins, e.g. Vercel preview URLs:
     #   https://my-app(-[a-z0-9-]+)?\.vercel\.app
